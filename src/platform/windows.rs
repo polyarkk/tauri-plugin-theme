@@ -1,16 +1,17 @@
-use crate::{save_theme_value, Theme};
+use crate::{Theme, ThemeOpt};
 use tauri::{command, AppHandle, Manager, Runtime};
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use windows_core::Interface;
 
 #[command]
 pub fn set_theme<R: Runtime>(app: AppHandle<R>, theme: Theme) -> Result<(), &'static str> {
-    save_theme_value(&app, theme);
+    app.get_theme_config().unwrap().set_theme(theme);
+
     for (_, window) in app.webview_windows() {
         let (app, app2) = (app.clone(), app.clone());
         // Window
         let hwnd = window.hwnd().unwrap_or_else(|_| app.restart());
-        darkmode::try_window_theme(hwnd, theme, false);
+        darkmode::try_window_theme(hwnd, theme, true);
         // Webview
         window
             .with_webview(move |view| unsafe {
@@ -34,6 +35,23 @@ pub fn set_theme<R: Runtime>(app: AppHandle<R>, theme: Theme) -> Result<(), &'st
     Ok(())
 }
 
+#[command]
+pub fn set_color<R: Runtime>(app: AppHandle<R>, color: u32) -> Result<(), &'static str> {
+    let color = ((color & 0xff0000) >> 16) | (color & 0xff00) | ((color & 0xff) << 16);
+
+    app.get_theme_config().unwrap().set_color(color);
+
+    for (_, window) in app.webview_windows() {
+        let (app, app2) = (app.clone(), app.clone());
+
+        // Window
+        let hwnd = window.hwnd().unwrap_or_else(|_| app.restart());
+        darkmode::try_set_title_bar_color(hwnd, color, true);
+    }
+
+    Ok(())
+}
+
 // From: https://github.com/tauri-apps/tao/blob/2c6de758ac656c0621d20da7c1649adfb8847066/src/platform_impl/windows/dark_mode.rs
 mod darkmode {
     // Copyright 2014-2021 The winit contributors
@@ -43,6 +61,7 @@ mod darkmode {
     use crate::Theme;
     use std::ffi::c_void;
     use std::sync::LazyLock;
+    use windows::Win32::Graphics::Dwm::DWMWA_CAPTION_COLOR;
     /// This is a simple implementation of support for Windows Dark Mode,
     /// which is inspired by the solution in https://github.com/ysc3839/win32-darkmode
     use windows::{
@@ -141,6 +160,34 @@ mod darkmode {
         SHOULD_APPS_USE_DARK_MODE
             .map(|should_apps_use_dark_mode| unsafe { (should_apps_use_dark_mode)() })
             .unwrap_or(false)
+    }
+
+    static CAPTION_COLOR_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
+        // We won't try to do anything for windows versions < 22000
+        match *WIN10_BUILD_VERSION {
+            Some(v) => v >= 22000,
+            None => false,
+        }
+    });
+
+    pub fn try_set_title_bar_color(hwnd: HWND, color: u32, redraw_title_bar: bool) {
+        if !*CAPTION_COLOR_SUPPORTED {
+            return;
+        }
+
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_CAPTION_COLOR,
+                &color as *const u32 as *const c_void,
+                std::mem::size_of::<u32>() as u32,
+            );
+        }
+
+        if redraw_title_bar {
+            unsafe { DefWindowProcW(hwnd, WM_NCACTIVATE, None, None) };
+            unsafe { DefWindowProcW(hwnd, WM_NCACTIVATE, WPARAM(true.into()), None) };
+        }
     }
 
     fn is_high_contrast() -> bool {

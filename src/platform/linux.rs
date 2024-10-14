@@ -1,4 +1,4 @@
-use crate::{save_theme_value, Theme};
+use crate::{Theme, ThemeOpt};
 use futures_lite::StreamExt;
 use gtk::prelude::GtkSettingsExt;
 use gtk::Settings;
@@ -12,7 +12,7 @@ use tokio::sync::{
 
 #[command]
 pub fn set_theme<R: Runtime>(app: AppHandle<R>, theme: Theme) -> Result<(), &'static str> {
-    save_theme_value(&app, theme);
+    app.get_theme_config().unwrap().set_theme(theme);
     match theme {
         Theme::Auto => {
             async_runtime::spawn(start_proxy(app));

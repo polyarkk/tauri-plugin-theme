@@ -4,17 +4,54 @@ mod platform;
 
 use platform::set_theme;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::sync::{LockResult, Mutex, MutexGuard};
 use tauri::plugin::{Builder, TauriPlugin};
-use tauri::{command, generate_handler, AppHandle, Config, Manager, Runtime};
+use tauri::{command, generate_handler, AppHandle, Config, Runtime};
+use crate::platform::set_color;
 
-const CONFIG_FILENAME: &str = "tauri-plugin-theme";
-const ERROR_MESSAGE: &str = "Get app config dir failed";
+static CONF: Mutex<ThemeConfig> = Mutex::new(ThemeConfig {
+    theme: Theme::Auto,
+    color: 0x000000,
+});
+
+pub struct ThemeConfig {
+    theme: Theme,
+    color: u32, // only supported in windows
+}
+
+impl ThemeConfig {
+    pub fn get_theme(&self) -> Theme {
+        self.theme
+    }
+
+    pub fn get_color(&self) -> u32 {
+        self.color
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+    }
+
+    pub fn set_color(&mut self, color: u32) {
+        self.color = color;
+    }
+}
+
+pub trait ThemeOpt {
+    fn get_theme_config(&self) -> LockResult<MutexGuard<'_, ThemeConfig>>;
+}
+
+impl<R: Runtime> ThemeOpt for AppHandle<R> {
+    fn get_theme_config(&self) -> LockResult<MutexGuard<'_, ThemeConfig>> {
+        CONF.lock()
+    }
+}
 
 pub fn init<R: Runtime>(config: &mut Config) -> TauriPlugin<R> {
     #[cfg(target_os = "windows")]
     {
-        let theme = saved_theme_value_from_config(config);
+        let theme = CONF.lock().unwrap().get_theme();
+
         for window in &mut config.app.windows {
             match theme {
                 Theme::Auto => window.theme = None,
@@ -24,11 +61,11 @@ pub fn init<R: Runtime>(config: &mut Config) -> TauriPlugin<R> {
         }
     }
     Builder::new("theme")
-        .invoke_handler(generate_handler![get_theme, set_theme])
+        .invoke_handler(generate_handler![get_theme, set_theme, get_color, set_color])
         .on_event(|app, e| {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             if let tauri::RunEvent::Ready = e {
-                if let Err(err) = set_theme(app.clone(), saved_theme_value(app)) {
+                if let Err(err) = set_theme(app.clone(), app.get_theme_config().unwrap().get_theme()) {
                     eprintln!("Failed to set theme: {}", err);
                 }
             }
@@ -66,34 +103,12 @@ impl std::fmt::Display for Theme {
 
 #[command]
 fn get_theme<R: Runtime>(app: AppHandle<R>) -> Result<Theme, ()> {
-    let theme = saved_theme_value(&app);
+    let theme = app.get_theme_config().unwrap().get_theme();
     Ok(theme)
 }
 
-#[cfg(target_os = "windows")]
-fn saved_theme_value_from_config(config: &Config) -> Theme {
-    if let Some(dir) = dirs_next::config_dir() {
-        let p = dir.join(&config.identifier).join(CONFIG_FILENAME);
-        return fs::read_to_string(p)
-            .map(Theme::from)
-            .unwrap_or(Theme::Auto);
-    }
-    Theme::Auto
-}
-
-fn saved_theme_value<R: Runtime>(app: &AppHandle<R>) -> Theme {
-    let config_dir = app.path().app_config_dir().expect(ERROR_MESSAGE);
-    let p = config_dir.join(CONFIG_FILENAME);
-    fs::read_to_string(p)
-        .map(Theme::from)
-        .unwrap_or(Theme::Auto)
-}
-
-fn save_theme_value<R: Runtime>(app: &AppHandle<R>, theme: Theme) {
-    let config_dir = app.path().app_config_dir().expect(ERROR_MESSAGE);
-    if !config_dir.exists() {
-        let _ = std::fs::create_dir_all(&config_dir);
-    }
-    let p = config_dir.join(CONFIG_FILENAME);
-    let _ = fs::write(p, theme.to_string());
+#[command]
+fn get_color<R: Runtime>(app: AppHandle<R>) -> Result<u32, ()> {
+    let color = app.get_theme_config().unwrap().get_color();
+    Ok(color)
 }
