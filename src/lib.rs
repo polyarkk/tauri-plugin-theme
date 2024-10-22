@@ -11,7 +11,7 @@ use crate::platform::set_color;
 
 static CONF: Mutex<ThemeConfig> = Mutex::new(ThemeConfig {
     theme: Theme::Auto,
-    color: 0x000000,
+    color: 0xffffffff,
 });
 
 pub struct ThemeConfig {
