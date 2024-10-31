@@ -18,6 +18,7 @@ pub use windows::set_theme;
 pub use windows::set_color;
 
 #[cfg(not(target_os = "windows"))]
-pub fn set_color<R: Runtime>(app: AppHandle<R>, color: u32) -> Result<(), &'static str> {
-
+#[tauri::command]
+pub fn set_color<R: tauri::Runtime>(app: tauri::AppHandle<R>, color: u32) -> Result<(), &'static str> {
+    Ok(())
 }

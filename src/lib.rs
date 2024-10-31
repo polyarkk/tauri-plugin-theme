@@ -65,7 +65,7 @@ pub fn init<R: Runtime>(config: &mut Config) -> TauriPlugin<R> {
         .on_event(|app, e| {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             if let tauri::RunEvent::Ready = e {
-                if let Err(err) = set_theme(app.clone(), app.get_theme_config().unwrap().get_theme()) {
+                if let Err(err) = set_theme(app.clone(), Theme::Auto) {
                     eprintln!("Failed to set theme: {}", err);
                 }
             }
